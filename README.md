@@ -51,3 +51,16 @@ python scopus_figure1_from_api.py --plot-only
 | `scopus_figure1_counts_optN.csv` | Year × domain counts (columns: Year, Load, Price, Wind, Solar) |
 | `scopus_figure1_optN.tif`        | Vertical stacked bar chart, where `N` is the query option |
 
+## Credibility check (example)
+
+The script prints a final “credibility check” query that OR-combines the 4 domain queries for the last year (currently 2025).
+
+Recorded run (local time): **2026-03-02**
+
+```text
+Credibility check query (PUBYEAR=2025):
+  ((TITLE-ABS-KEY((("electricity" OR "power") W/3 ("load" OR "demand")) W/3 (forecast* OR predict*)) AND PUBYEAR > 2024 AND PUBYEAR < 2026 AND DOCTYPE(ar OR re)) OR (TITLE-ABS-KEY((("electricity" OR "power") W/3 "price") W/3 (forecast* OR predict*)) AND PUBYEAR > 2024 AND PUBYEAR < 2026 AND DOCTYPE(ar OR re)) OR (TITLE-ABS-KEY((("wind" W/3 ("power" OR "generation")) W/3 (forecast* OR predict*))) AND PUBYEAR > 2024 AND PUBYEAR < 2026 AND DOCTYPE(ar OR re)) OR (TITLE-ABS-KEY(((("solar" OR "photovoltaic" OR "PV") W/3 ("power" OR "generation")) W/3 (forecast* OR predict*))) AND PUBYEAR > 2024 AND PUBYEAR < 2026 AND DOCTYPE(ar OR re)))
+  Total publications: 2441
+Done.
+```
+
