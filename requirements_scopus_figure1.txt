@@ -1,5 +1,5 @@
 # Dependencies for scopus_figure1_from_api.py (Scopus API + Figure 1)
 pybliometrics>=3.0
-pandas>=1.0
+pandas>=1.5
 matplotlib>=3.0
 python-dotenv>=1.0

@@ -1,0 +1,19 @@
+{
+  "source": "Scopus Search API",
+  "source_url": "https://dev.elsevier.com/documentation/ScopusSearchAPI.wadl",
+  "query_option": 6,
+  "year_min": 2010,
+  "year_max": 2026,
+  "extracted_at": "2026-11-25T09:03:57Z",
+  "partial_years": [
+    2026
+  ],
+  "counts_overlap_across_domains": true,
+  "csv_sha256": "91795f421791c1158cf52704ab1accaa58e42d4b49ed5f8e911766aa735ae1b1",
+  "queries": {
+    "Load": "TITLE-ABS-KEY(((\"electricity\" OR \"power\") W/3 (\"load\" OR \"demand\")) W/3 (forecast* OR predict*)) AND PUBYEAR > 2009 AND PUBYEAR < 2027 AND DOCTYPE(ar OR re)",
+    "Price": "TITLE-ABS-KEY(((\"electricity\" OR \"power\") W/3 \"price\") W/3 (forecast* OR predict*)) AND PUBYEAR > 2009 AND PUBYEAR < 2027 AND DOCTYPE(ar OR re)",
+    "Wind": "TITLE-ABS-KEY(((\"wind\" W/3 (\"power\" OR \"generation\")) W/3 (forecast* OR predict*))) AND PUBYEAR > 2009 AND PUBYEAR < 2027 AND DOCTYPE(ar OR re)",
+    "Solar": "TITLE-ABS-KEY((((\"solar\" OR \"photovoltaic\" OR \"PV\") W/3 (\"power\" OR \"generation\")) W/3 (forecast* OR predict*))) AND PUBYEAR > 2009 AND PUBYEAR < 2027 AND DOCTYPE(ar OR re)"
+  }
+}

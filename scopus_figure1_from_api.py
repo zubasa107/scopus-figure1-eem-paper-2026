@@ -6,7 +6,7 @@ Reproduce and update Figure 1 from:
 Figure 1: Number of publications in load, price, wind and solar forecasting
 returned by respective Scopus search (TITLE-ABS-KEY phrase searches).
 Data are fetched via the Scopus API (pybliometrics) and plotted as
-a vertical stacked bar chart (2010–2025).
+a vertical stacked bar chart (2010–2026, with the current year marked partial).
 
 Usage:
   1. Get a Scopus API key: https://dev.elsevier.com/myapikey.html
@@ -28,6 +28,9 @@ import os
 import sys
 import time
 import argparse
+import hashlib
+import json
+from datetime import datetime, timezone
 from pathlib import Path
 
 # Load .env from script folder (e.g. ELSEVIER_API_KEY=...)
@@ -75,7 +78,7 @@ DOMAINS = {
 }
 
 YEAR_MIN = 2010
-YEAR_MAX = 2025  # include partial 2025; annotate in figure
+YEAR_MAX = 2026  # Current-year counts are explicitly labelled as partial.
 
 
 def build_domain_queries(query_option: int, year_min: int, year_max: int) -> dict[str, str]:
@@ -184,8 +187,30 @@ def get_total_results(query: str) -> int:
     }
     resp = get_content(URLS["ScopusSearch"], "ScopusSearch", params=params)
     js = resp.json()
-    n = js.get("search-results", {}).get("opensearch:totalResults", 0) or 0
+    n = js["search-results"]["opensearch:totalResults"]
     return int(n)
+
+
+def extract_year_counts(response: dict, years: list[int]) -> dict[int, int]:
+    """Reject incomplete facets rather than silently replacing missing data by zero."""
+    results = response["search-results"]
+    total = int(results["opensearch:totalResults"])
+    if total < 0:
+        raise ValueError("Scopus returned a negative result count")
+    facet = results.get("facet")
+    if isinstance(facet, list):
+        facet = next((item for item in facet if item.get("name") == "pubyear"), None)
+    categories = facet.get("category", []) if isinstance(facet, dict) else []
+    by_year = {}
+    for category in categories:
+        year = int(category.get("value") or category.get("name"))
+        count = int(category["hitCount"])
+        if year not in years or year in by_year or count < 0:
+            raise ValueError("Invalid or duplicate publication-year facet")
+        by_year[year] = count
+    if sum(by_year.values()) != total:
+        raise ValueError("Publication-year facets do not reconcile with Scopus totalResults")
+    return {year: by_year.get(year, 0) for year in years}
 
 
 def fetch_all_counts(
@@ -224,21 +249,8 @@ def fetch_all_counts(
         resp = get_content(URLS["ScopusSearch"], "ScopusSearch", params=params)
         js = resp.json()
 
-        facet = js.get("search-results", {}).get("facet")
-        if isinstance(facet, list):
-            # Some endpoints return a list of facets; select pubyear if present.
-            facet = next((f for f in facet if f.get("name") == "pubyear"), facet[0] if facet else None)
-        categories = facet.get("category", []) if isinstance(facet, dict) else []
-
-        by_year: dict[int, int] = {}
-        for c in categories:
-            try:
-                y = int(c.get("value") or c.get("name"))
-                by_year[y] = int(c.get("hitCount", 0) or 0)
-            except Exception:
-                continue
-
-        wide[domain_name] = [by_year.get(y, 0) for y in years]
+        by_year = extract_year_counts(js, years)
+        wide[domain_name] = [by_year[y] for y in years]
         time.sleep(delay_seconds)
 
     # Ensure column order: Year, Load, Price, Wind, Solar
@@ -249,7 +261,8 @@ def fetch_all_counts(
 
     if out_csv is not None:
         out_csv = Path(out_csv)
-        wide.to_csv(out_csv, index=False)
+        with out_csv.open("w", encoding="utf-8", newline="") as output:
+            wide.to_csv(output, index=False, lineterminator="\n")
         print(f"Saved counts to {out_csv}")
 
     return wide
@@ -259,6 +272,8 @@ def plot_figure1(
     df: pd.DataFrame,
     out_path: str | Path = "scopus_figure1.tif",
     year_max: int = YEAR_MAX,
+    partial_years: list[int] | None = None,
+    extracted_at: str | None = None,
 ) -> None:
     """
     Vertical stacked bar chart: year on x-axis, number of publications on y-axis,
@@ -291,22 +306,37 @@ def plot_figure1(
 
     ax.set_xlabel("Year")
     ax.set_ylabel("Number of forecast publications")
-    tick_years = years[::2]
+    partial_years = partial_years or []
+    tick_years = sorted(set(years[::2]) | {int(years.iloc[-1])})
     ax.set_xticks(tick_years)
-    ax.set_xticklabels(tick_years, rotation=45, ha="right")
+    ax.set_xticklabels([f"{year}*" if year in partial_years else str(year) for year in tick_years], rotation=45, ha="right")
     handles, labels = ax.get_legend_handles_labels()
     ordered = {label: handle for handle, label in zip(handles, labels)}
     legend_order = ["Wind", "Solar", "Price", "Load"]
     ax.legend([ordered[d] for d in legend_order if d in ordered], legend_order, loc="upper left")
-    fig.tight_layout()
+    if partial_years:
+        label = f"* {', '.join(map(str, partial_years))}: partial year"
+        if extracted_at:
+            label += f"; extracted {extracted_at[:10]}"
+        fig.text(0.5, 0.01, label, ha="center", fontsize=6)
+    fig.tight_layout(rect=(0, 0.06 if partial_years else 0, 1, 1))
     out_path = Path(out_path)
     fig.savefig(out_path, dpi=300, bbox_inches="tight")
+    fig.savefig(out_path.with_suffix(".png"), dpi=300, bbox_inches="tight")
     plt.close(fig)
     print(f"Saved figure to {out_path}")
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Reproduce Figure 1 from Scopus API counts.")
+    parser.add_argument(
+        "--year-min", type=int, default=YEAR_MIN,
+        help="First publication year (default: 2010).",
+    )
+    parser.add_argument(
+        "--year-max", type=int, default=YEAR_MAX,
+        help="Last publication year (default: 2026).",
+    )
     parser.add_argument(
         "--plot-only",
         action="store_true",
@@ -330,7 +360,10 @@ def parse_args() -> argparse.Namespace:
         choices=[1, 2, 3, 4, 5, 6, 7],
         help="Query set to use for Scopus fetching (1=replication phrases; 2=expanded + DOCTYPE(ar OR re); 3=expanded minus predict* + DOCTYPE(ar OR re); 4=expanded minus irradiance/speed + DOCTYPE(ar OR re); 5=option-4 style with W/3 and (forecast* OR predict*); 6=expanded with electricity/power context + W/3 + DOCTYPE(ar OR re); 7=expanded with short-term/day-ahead terms + DOCTYPE(ar OR re)).",
     )
-    return parser.parse_args()
+    args = parser.parse_args()
+    if args.year_min > args.year_max:
+        parser.error("--year-min must not exceed --year-max")
+    return args
 
 
 def main() -> None:
@@ -347,6 +380,7 @@ def main() -> None:
         csv_path = script_dir / f"scopus_figure1_counts_opt{args.query_option}.csv"
         legacy_csv_path = script_dir / "scopus_figure1_counts.csv"
     tif_path = script_dir / f"scopus_figure1_opt{args.query_option}.tif"
+    metadata_path = csv_path.with_name(f"scopus_figure1_metadata_opt{args.query_option}.json")
 
     # Optional: plot from existing CSV only (no API calls)
     plot_only = (
@@ -357,7 +391,10 @@ def main() -> None:
     if plot_only and csv_path.exists():
         print(f"Using existing counts from {csv_path} (no API calls).")
         df = pd.read_csv(csv_path)
-        plot_figure1(df, out_path=tif_path, year_max=df["Year"].max())
+        metadata = json.loads(metadata_path.read_text()) if metadata_path.exists() else {}
+        if metadata and metadata.get("csv_sha256") != hashlib.sha256(csv_path.read_bytes()).hexdigest():
+            raise SystemExit("Counts CSV does not match its extraction metadata")
+        plot_figure1(df, out_path=tif_path, year_max=df["Year"].max(), partial_years=metadata.get("partial_years"), extracted_at=metadata.get("extracted_at"))
         print("Done.")
         return
     if plot_only and not csv_path.exists():
@@ -374,17 +411,32 @@ def main() -> None:
 
     print("Fetching publication counts from Scopus (one query per domain; facets by year)...")
     df = fetch_all_counts(
-        year_min=YEAR_MIN,
-        year_max=YEAR_MAX,
+        year_min=args.year_min,
+        year_max=args.year_max,
         delay_seconds=0.5,
         out_csv=csv_path,
         query_option=args.query_option,
     )
 
+    extracted_at = datetime.now(timezone.utc)
+    partial_years = [year for year in df["Year"].astype(int) if year >= extracted_at.year]
+    metadata = {
+        "source": "Scopus Search API",
+        "source_url": "https://dev.elsevier.com/documentation/ScopusSearchAPI.wadl",
+        "query_option": args.query_option,
+        "year_min": args.year_min,
+        "year_max": args.year_max,
+        "extracted_at": extracted_at.isoformat(timespec="seconds").replace("+00:00", "Z"),
+        "partial_years": partial_years,
+        "counts_overlap_across_domains": True,
+        "csv_sha256": hashlib.sha256(csv_path.read_bytes()).hexdigest(),
+        "queries": build_domain_queries(args.query_option, args.year_min, args.year_max),
+    }
+    metadata_path.write_text(json.dumps(metadata, indent=2) + "\n", encoding="utf-8")
     print("Plotting Figure 1...")
-    plot_figure1(df, out_path=tif_path, year_max=YEAR_MAX)
+    plot_figure1(df, out_path=tif_path, year_max=args.year_max, partial_years=partial_years, extracted_at=metadata["extracted_at"])
 
-    cred_year = YEAR_MAX
+    cred_year = args.year_max
     cred_queries = build_domain_queries(query_option=args.query_option, year_min=cred_year, year_max=cred_year)
     credibility_query = "(" + " OR ".join(f"({q})" for q in cred_queries.values()) + ")"
     print(f"Credibility check query (PUBYEAR={cred_year}):")

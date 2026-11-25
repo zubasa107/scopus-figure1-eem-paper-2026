@@ -1,66 +1,57 @@
-# Figure 1 (EEM paper 2026) — Scopus query counts
+# Figure 1 (EEM paper 2026): Scopus publication counts
 
-This repository contains the code used to **fetch Scopus publication counts** and generate the **Figure 1** stacked bar chart (publications per year, split by domain: load, price, wind, solar).
+Reproducible Scopus counts for load, price, wind and solar forecasting, **2010-2026**.
+The maintained dataset uses **query option 6**, unchanged from the previous snapshot.
 
-In the paper, **Search String Option 6** is used.
+![Scopus publication counts, including partial 2026](scopus_figure1_opt6.png)
 
-## What the script does
+## Current snapshot
 
-- Uses the Scopus Search API (via `pybliometrics`) to run **one query per domain** with a year-range filter (2010–2025)
-- Extracts **year-by-year counts via Scopus facets (`pubyear`)** (no full record download)
-- Writes:
-  - a CSV with counts
-  - a `.tif` figure (stacked bars)
+Extracted **25 November 2026**. **2026 is a partial year**: these are records indexed by Scopus at extraction, not a full-year projection. Earlier years were refreshed in the same extraction, so indexing corrections can change historical counts.
 
-## Setup
+| Domain | 2026 indexed publications |
+| --- | ---: |
+| Load | 676 |
+| Price | 224 |
+| Wind | 980 |
+| Solar | 1,110 |
 
-1. Get a Scopus API key: `https://dev.elsevier.com/myapikey.html`
-2. Provide the key (one of the following):
-   - Create a local `.env` file (see `.env.example`) with `ELSEVIER_API_KEY=...`, or
-   - Set an environment variable: `ELSEVIER_API_KEY=...` (or `SCOPUS_API_KEY=...`)
-3. Install dependencies:
+Each domain is searched independently. A publication can match multiple domains, so the stacked sum is **not a count of unique papers**. The historical March 2026 snapshot remains available in Git history.
+
+## Method
+
+Option 6 searches title, abstract and keywords with the existing electricity/power-context and proximity expressions, restricted to articles and reviews (`DOCTYPE(ar OR re)`). It uses one year-range request per domain and publication-year facets rather than downloading full records. No journal filter is applied.
+
+The extraction rejects incomplete or invalid facets unless their counts reconcile with Scopus `totalResults`. The companion metadata records the exact four queries, UTC extraction time, partial-year status and SHA-256 of the UTF-8/LF CSV. API credentials and institution tokens are never part of these outputs.
+
+Option 1 retains the phrase queries used to reproduce the approach in Hong et al., "Energy Forecasting: A Review and Outlook," IEEE Open Access Journal of Power and Energy (2020). It is a separate query option, not the maintained option-6 dataset.
+
+## Setup and update
+
+Configure a Scopus API key in the local `.env` (`ELSEVIER_API_KEY` or `SCOPUS_API_KEY`) or existing pybliometrics configuration. See `.env.example`.
 
 ```bash
 pip install -r requirements_scopus_figure1.txt
+python scopus_figure1_from_api.py --query-option 6 --year-max 2026
 ```
 
-## Usage
+Defaults cover 2010-2026. Other year ranges can be selected with `--year-min` and `--year-max`.
 
-- Fetch from Scopus and plot (paper default = option 6):
-
-```bash
-python scopus_figure1_from_api.py
-```
-
-- Explicitly select the search string option:
-
-```bash
-python scopus_figure1_from_api.py --query-option 6
-```
-
-- Re-plot from an existing counts CSV (no API calls):
+Re-plot the saved snapshot without API calls:
 
 ```bash
 python scopus_figure1_from_api.py --plot-only
 ```
 
+Plot-only mode preserves the metadata's extraction date and partial-year annotation, and checks that the CSV matches its recorded hash.
+
 ## Outputs
 
-| File | Description |
-|------|-------------|
-| `scopus_figure1_counts_optN.csv` | Year × domain counts (columns: Year, Load, Price, Wind, Solar) |
-| `scopus_figure1_optN.tif`        | Vertical stacked bar chart, where `N` is the query option |
+- `scopus_figure1_counts_opt6.csv`: Year, Load, Price, Wind, Solar.
+- `scopus_figure1_metadata_opt6.json`: source and extraction provenance.
+- `scopus_figure1_opt6.tif`: paper figure, 300 dpi.
+- `scopus_figure1_opt6.png`: web/browser preview of the same figure.
 
-## Credibility check (example)
+The script also prints a separate OR-combined query and unique result count for the final year as a credibility check. This does not replace the independent domain counts.
 
-The script prints a final “credibility check” query that OR-combines the 4 domain queries for the last year (currently 2025).
-
-Recorded run (local time): **2026-03-02**
-
-```text
-Credibility check query (PUBYEAR=2025):
-  ((TITLE-ABS-KEY((("electricity" OR "power") W/3 ("load" OR "demand")) W/3 (forecast* OR predict*)) AND PUBYEAR > 2024 AND PUBYEAR < 2026 AND DOCTYPE(ar OR re)) OR (TITLE-ABS-KEY((("electricity" OR "power") W/3 "price") W/3 (forecast* OR predict*)) AND PUBYEAR > 2024 AND PUBYEAR < 2026 AND DOCTYPE(ar OR re)) OR (TITLE-ABS-KEY((("wind" W/3 ("power" OR "generation")) W/3 (forecast* OR predict*))) AND PUBYEAR > 2024 AND PUBYEAR < 2026 AND DOCTYPE(ar OR re)) OR (TITLE-ABS-KEY(((("solar" OR "photovoltaic" OR "PV") W/3 ("power" OR "generation")) W/3 (forecast* OR predict*))) AND PUBYEAR > 2024 AND PUBYEAR < 2026 AND DOCTYPE(ar OR re)))
-  Total publications: 2441
-Done.
-```
-
+Run offline data-integrity checks with `python -m unittest -v`.
